@@ -13,11 +13,10 @@ XELATEX = xelatex -synctex=1 -file-line-error -interaction=nonstopmode -halt-on-
 .PHONY: all
 all: $(PRESENTATIONS)
 
-$(PRESENTATIONS): $(OUT_DIR)/%.pdf : $(SRC_DIR)/%.tex $(wildcard $(SRC_DIR)/*.bib) $(wildcard $(FIG_DIR)/*)
+$(PRESENTATIONS): $(OUT_DIR)/%.pdf : $(SRC_DIR)/%.tex
 	@echo "==>" $@
 	@mkdir -p $(AUX_DIR)
 	@$(call XELATEX)
-	@biber -q $(AUX_DIR)/$(notdir $(basename $<))
 	@$(call XELATEX)
 	@mkdir -p $(OUT_DIR)
 	@mv $(AUX_DIR)/$(notdir $@) $(OUT_DIR)
