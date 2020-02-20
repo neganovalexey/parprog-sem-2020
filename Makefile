@@ -5,7 +5,8 @@ OUT_DIR = out
 SRC_DIR = src
 FIG_DIR = fig
 
-PRESENTATIONS = $(OUT_DIR)/02-13.pdf
+PRESENTATION_NAMES = 02-13.pdf 02-20.pdf
+PRESENTATIONS = $(addprefix $(OUT_DIR)/, $(PRESENTATION_NAMES))
 
 XELATEX = xelatex -synctex=1 -file-line-error -interaction=nonstopmode -halt-on-error -output-directory=$(AUX_DIR) $< \
  | grep ".*:[0-9]*:.*"; exit $${PIPESTATUS[0]}
