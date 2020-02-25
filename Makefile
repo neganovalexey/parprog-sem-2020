@@ -5,10 +5,10 @@ OUT_DIR = out
 SRC_DIR = src
 FIG_DIR = fig
 
-PRESENTATION_NAMES = 02-13.pdf 02-20.pdf
+PRESENTATION_NAMES = 02-13.pdf 02-20.pdf 02-27.pdf
 PRESENTATIONS = $(addprefix $(OUT_DIR)/, $(PRESENTATION_NAMES))
 
-XELATEX = xelatex -synctex=1 -file-line-error -interaction=nonstopmode -halt-on-error -output-directory=$(AUX_DIR) $< \
+XELATEX = xelatex -synctex=1 -file-line-error -interaction=nonstopmode -halt-on-error -shell-escape -output-directory=$(AUX_DIR) $< \
  | grep ".*:[0-9]*:.*"; exit $${PIPESTATUS[0]}
 
 .PHONY: all
