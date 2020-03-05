@@ -1,0 +1,133 @@
+\documentclass[aspectratio=169, pdf, 8pt, unicode]{beamer}
+\usepackage[american,russian]{babel}
+\usepackage[default]{sourcesanspro}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{pgfplotstable}
+\usepackage{caption}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{setspace}
+\usepackage{fancyvrb}
+\usepackage[outputdir=aux]{minted}
+
+\DeclareCaptionLabelFormat{gostfigure}{Рисунок #2}
+\captionsetup[table]{labelsep=endash,justification=justified,singlelinecheck=false,font=normalsize,skip=0pt} 
+\captionsetup[figure]{labelformat=gostfigure,labelsep=endash,justification=centering,singlelinecheck=false,font=normalsize} 
+\pgfplotsset{compat=1.9}
+
+\mode<presentation> {
+\usetheme{Madrid}
+}
+
+\setbeamerfont{institute}{size=\normalsize}
+\setbeamertemplate{itemize/enumerate body begin}{\large}
+\setbeamertemplate{itemize/enumerate subbody begin}{\tiny}
+
+\title[Теория и практика многопоточного программирования]{Теория и практика многопоточного программирования\\ \vspace{0.5cm}Семинар 5}
+
+\author{Неганов Алексей}
+
+\institute[МФТИ]{
+    Московский физико-технический институт (национальный исследовательский университет)\\
+    Кафедра теоретической и прикладной информатики\\
+}
+
+\date{Москва 2020}
+
+\setbeamertemplate{caption}[numbered]
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Spinlock}
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.8\textwidth}
+\begin{minted}{C++}
+class spin_lock_TAS
+{
+    atomic<unsigned int> m_spin ;
+public:
+    spin_lock(): m_spin(0) {}
+    ~spin_lock() { assert( m_spin.load(memory_order_relaxed) == 0);}
+
+    void lock()
+    {
+        unsigned int expected;
+        do { expected = 0; }
+        while ( !m_spin.compare_exchange_weak( expected, 1, memory_order_acquire ));
+    }
+    void unlock()
+    {
+        m_spin.store( 0, memory_order_release );
+    }
+};
+\end{minted}
+\end{minipage}
+\end{figure}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Spinlock}
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.8\textwidth}
+\begin{minted}{C++}
+class spin_lock_TTAS
+{
+    atomic<unsigned int> m_spin ;
+public:
+    spin_lock(): m_spin(0) {}
+    ~spin_lock() { assert( m_spin.load(memory_order_relaxed) == 0);}
+
+    void lock()
+    {
+        unsigned int expected;
+        do {
+            while (m_spin.load(memory_order_acquire));
+            expected = 0;
+        }
+        while ( !m_spin.compare_exchange_weak( expected, 1, memory_order_acquire ));
+    }
+    void unlock()
+    {
+        m_spin.store( 0, memory_order_release );
+    }
+};
+\end{minted}
+\end{minipage}
+\end{figure}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Spinlock}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.4\textwidth]{fig/tas_vs_ttas.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Жизненный цикл потока: yield vs sleep}
+\begin{figure}[H]
+\centering
+\includegraphics[width=1.0\textwidth]{fig/yield_vs_sleep.jpg}
+\end{figure}
+\end{frame}
+
+\begin{frame}
+\frametitle{Задачи}
+\begin{enumerate}
+\item \textbf{(Обязательная)} Напишите свои mutex'ы, использующие yield / exponential backoff.
+    Сравните производительность TAS lock / TTAS lock / lock with yield / backoff lock.
+    Желательно использовать C++11 (и выше), при желании можно GNU С11 и pthreads.
+\end{enumerate}
+
+\end{frame}
+
+\end{document}

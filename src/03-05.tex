@@ -154,7 +154,7 @@ Load/store операции могут переупорядочиваться, �
 \begin{figure}[H]
 \begin{BVerbatim}
 x.store(1);      y = x.load();
-y.store(2);      z = x.load();
+x.store(2);      z = x.load();
                  assert(y <= z);
 \end{BVerbatim}
 \end{figure}
@@ -236,99 +236,6 @@ x.store(10);        assert (y.load() == 20)        assert (x.load() == 10);
 \end{figure}
 
 В acquire/release \texttt{assert} второго потока пройдёт, а третьего --- сработает.
-
-\end{frame}
-
-\begin{frame}[fragile]
-\frametitle{Spinlock}
-\begin{figure}[H]
-\centering
-\begin{minipage}{0.8\textwidth}
-\begin{minted}{C++}
-class spin_lock_TAS
-{
-    atomic<unsigned int> m_spin ;
-public:
-    spin_lock(): m_spin(0) {}
-    ~spin_lock() { assert( m_spin.load(memory_order_relaxed) == 0);}
-
-    void lock()
-    {
-        unsigned int expected;
-        do { expected = 0; }
-        while ( !m_spin.compare_exchange_weak( expected, 1, memory_order_acquire ));
-    }
-    void unlock()
-    {
-        m_spin.store( 0, memory_order_release );
-    }
-};
-\end{minted}
-\end{minipage}
-\end{figure}
-\end{frame}
-
-\begin{frame}[fragile]
-\frametitle{Spinlock}
-\begin{figure}[H]
-\centering
-\begin{minipage}{0.8\textwidth}
-\begin{minted}{C++}
-class spin_lock_TTAS
-{
-    atomic<unsigned int> m_spin ;
-public:
-    spin_lock(): m_spin(0) {}
-    ~spin_lock() { assert( m_spin.load(memory_order_relaxed) == 0);}
-
-    void lock()
-    {
-        unsigned int expected;
-        do {
-            while (m_spin.load(memory_order_acquire));
-            expected = 0;
-        }
-        while ( !m_spin.compare_exchange_weak( expected, 1, memory_order_acquire ));
-    }
-    void unlock()
-    {
-        m_spin.store( 0, memory_order_release );
-    }
-};
-\end{minted}
-\end{minipage}
-\end{figure}
-\end{frame}
-
-\begin{frame}[fragile]
-\frametitle{Spinlock}
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.4\textwidth]{fig/tas_vs_ttas.png}
-\end{figure}
-\end{frame}
-
-\begin{frame}[fragile]
-\frametitle{Жизненный цикл потока: yield vs sleep}
-\begin{figure}[H]
-\centering
-\includegraphics[width=1.0\textwidth]{fig/yield_vs_sleep.jpg}
-\end{figure}
-\end{frame}
-
-\begin{frame}
-\frametitle{Задачи}
-\begin{enumerate}
-\item \textbf{(Обязательная)} Напишите свои mutex'ы, использующие yield / exponential backoff.
-    Сравните производительность TAS lock / TTAS lock / lock with yield / backoff lock.
-    Желательно использовать C++11 (и выше), при желании можно GNU С11 и pthreads.
-\end{enumerate}
-
-Доклады:
-\begin{enumerate}
-\item Протоколы MESI, MOESI, MESIF.
-\item Барьеры памяти в x86 с примерами на ассемблере. Связь с memory order из C11 / C++11.
-\end{enumerate}
 
 \end{frame}
 
