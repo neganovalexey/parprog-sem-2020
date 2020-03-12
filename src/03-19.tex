@@ -1,0 +1,197 @@
+\documentclass[aspectratio=169, pdf, 8pt, unicode]{beamer}
+\usepackage[american,russian]{babel}
+\usepackage[default]{sourcesanspro}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{pgfplotstable}
+\usepackage{caption}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{setspace}
+\usepackage{fancyvrb}
+\usepackage[outputdir=aux]{minted}
+
+\DeclareCaptionLabelFormat{gostfigure}{Рисунок #2}
+\captionsetup[table]{labelsep=endash,justification=justified,singlelinecheck=false,font=normalsize,skip=0pt} 
+\captionsetup[figure]{labelformat=gostfigure,labelsep=endash,justification=centering,singlelinecheck=false,font=normalsize} 
+\pgfplotsset{compat=1.9}
+
+\mode<presentation> {
+\usetheme{Madrid}
+}
+
+\setbeamerfont{institute}{size=\normalsize}
+\setbeamertemplate{itemize/enumerate body begin}{\large}
+\setbeamertemplate{itemize/enumerate subbody begin}{\tiny}
+
+\title[Теория и практика многопоточного программирования]{Теория и практика многопоточного программирования\\ \vspace{0.5cm}Семинар 6}
+
+\author{Неганов Алексей}
+
+\institute[МФТИ]{
+    Московский физико-технический институт (национальный исследовательский университет)\\
+    Кафедра теоретической и прикладной информатики\\
+}
+
+\date{Москва 2020}
+
+\setbeamertemplate{caption}[numbered]
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Array-based queue lock}
+\begin{figure}[H]
+\begin{minipage}{0.4\textwidth}
+\small
+\begin{minted}{C++}
+class ALock {
+    pthread_key_t idx_key;
+    atomic<uint64_t> tail;
+    atomic<uint8_t> *flag;
+    size_t size;
+
+    int get_thread_idx() {
+        void *mem = pthread_getspecific(idx_key);
+        return mem ? *((int*)mem) : -1;
+    }
+
+    void set_thread_idx(int val) {
+        void *mem = malloc(sizeof(int));
+        *((int*)mem)=val;
+        pthread_setspecific(idx_key, mem);
+    }
+\end{minted}
+\end{minipage}
+\hspace{0.05\textwidth}
+\begin{minipage}{0.5\textwidth}
+\small
+\begin{minted}{C++}
+public:
+    ALock(size_t cap) : tail(0), size(cap) {
+        pthread_key_create(&idx_key, NULL);
+        flag = new atomic<uint8_t>[cap];
+        flag[0].store(1);
+        for (size_t i = 1; i < cap; i++)
+            flag[i].store(0);
+    }
+
+    void lock() {
+        const auto idx = tail.fetch_add(1) % size;
+        set_thread_idx(idx);
+        while (!flag[idx].load());
+    }
+
+    void unlock() {
+        const auto idx = get_thread_idx();
+        flag[idx].store(0);
+        flag[(idx + 1) % size].store(1);
+    }
+};
+\end{minted}
+\end{minipage}
+\end{figure}
+\begin{alertblock}{Замечание}
+Упорядочение памяти \texttt{(memory\_order)}, обработка ошибок, деструктор класса опущены для наглядности
+\end{alertblock}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Array-based queue lock}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.45\textwidth]{fig/alock_padding-a.png}
+\includegraphics[width=0.45\textwidth]{fig/alock_padding-b.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{CLH lock}
+\begin{figure}[H]
+\begin{minipage}{0.8\textwidth}
+\small
+\begin{minted}{C}
+struct clh_mutex_node {
+    _Atomic char succ_must_wait;
+};
+
+typedef struct {
+    clh_mutex_node_t * mynode;
+    char padding[64];  // To avoid false sharing with the tail
+    _Atomic (clh_mutex_node_t *) tail;
+} clh_mutex_t;
+
+static clh_mutex_node_t * clh_mutex_create_node(char islocked) {
+    clh_mutex_node_t * new_node = (clh_mutex_node_t *)malloc(sizeof(clh_mutex_node_t));
+    atomic_store_explicit(&new_node->succ_must_wait, islocked, memory_order_relaxed);
+    return new_node;
+}
+
+void clh_mutex_init(clh_mutex_t * self) {
+    // We create the first sentinel node unlocked, with islocked=0
+    clh_mutex_node_t * node = clh_mutex_create_node(0);
+    self->mynode = node;
+    atomic_store(&self->tail, node);
+}
+\end{minted}
+\end{minipage}
+\end{figure}
+\texttt{https://github.com/pramalhe/ConcurrencyFreaks/blob/master/C11/locks}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{CLH lock}
+\begin{figure}[H]
+\begin{minipage}{0.8\textwidth}
+\small
+\begin{minted}{C}
+// simplified version
+void clh_mutex_lock(clh_mutex_t * self) {
+    // Create the new node locked by default, setting islocked=1
+    clh_mutex_node_t *mynode = clh_mutex_create_node(1);
+    clh_mutex_node_t *prev = atomic_exchange(&self->tail, mynode);
+
+    // This thread's node is now in the queue, so wait until it is its turn
+    while (atomic_load(&prev->succ_must_wait));
+
+    // This thread has acquired the lock on the mutex and it is now safe to
+    // cleanup the memory of the previous node.
+    free(prev);
+
+    // Store mynode for clh_mutex_unlock() to use. We could replace
+    // this with a thread-local, not sure which is faster.
+    self->mynode = mynode;
+}
+
+void clh_mutex_unlock(clh_mutex_t * self) {
+    if (self->mynode == NULL) {
+        // ERROR: This will occur if unlock() is called without a lock()
+        return;
+    }
+    atomic_store(&self->mynode->succ_must_wait, 0);
+}
+\end{minted}
+\end{minipage}
+\end{figure}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{CLH lock}
+\begin{figure}[H]
+\includegraphics[width=0.5\textwidth]{fig/clh.jpeg}
+\end{figure}
+\end{frame}
+
+\begin{frame}
+\frametitle{Задачи}
+\begin{enumerate}
+\item Можно ли обойтись без \texttt{pthreads} для организации thread-local переменных? Предложите свой вариант array-based lock.
+\end{enumerate}
+
+\end{frame}
+
+\end{document}
