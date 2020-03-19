@@ -5,7 +5,7 @@ OUT_DIR = out
 SRC_DIR = src
 FIG_DIR = fig
 
-PRESENTATION_NAMES = 02-13.pdf 02-20.pdf 02-27.pdf 03-05.pdf 03-12.pdf
+PRESENTATION_NAMES = 02-13.pdf 02-20.pdf 02-27.pdf 03-05.pdf 03-12.pdf 03-19.pdf 03-19-lecture.pdf
 PRESENTATIONS = $(addprefix $(OUT_DIR)/, $(PRESENTATION_NAMES))
 
 XELATEX = xelatex -synctex=1 -file-line-error -interaction=nonstopmode -halt-on-error -shell-escape -output-directory=$(AUX_DIR) $< \

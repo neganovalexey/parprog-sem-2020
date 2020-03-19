@@ -1,0 +1,301 @@
+\documentclass[aspectratio=169, pdf, 8pt, unicode]{beamer}
+\usepackage[american,russian]{babel}
+\usepackage[default]{sourcesanspro}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{pgfplotstable}
+\usepackage{caption}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{automata, positioning, arrows, chains, fit, shapes}
+\usepackage{tikzscale}
+\usepackage{setspace}
+\usepackage{fancyvrb}
+
+\DeclareCaptionLabelFormat{gostfigure}{Рисунок #2}
+\captionsetup[table]{labelsep=endash,justification=justified,singlelinecheck=false,font=normalsize,skip=0pt} 
+\captionsetup[figure]{labelformat=gostfigure,labelsep=endash,justification=centering,singlelinecheck=false,font=normalsize} 
+\pgfplotsset{compat=1.9}
+
+\mode<presentation> {
+\usetheme{Madrid}
+}
+
+\setbeamerfont{institute}{size=\normalsize}
+\setbeamertemplate{itemize/enumerate body begin}{\large}
+\setbeamertemplate{itemize/enumerate subbody begin}{\tiny}
+
+\title[Теория и практика многопоточного программирования]{Теория и практика многопоточного программирования\\ \vspace{0.5cm}Лекция 6}
+
+\author{Неганов Алексей}
+
+\institute[МФТИ]{
+    Московский физико-технический институт (национальный исследовательский университет)\\
+    Кафедра теоретической и прикладной информатики\\
+}
+
+\date{Москва 2020}
+
+\setbeamertemplate{caption}[numbered]
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Формализм конечного автомата}
+\begin{block}{Определение}
+    \textbf{Недетерминированный конечный автомат (НКА)} --- это пятёрка
+    \begin{equation}
+        M = (Q, \Sigma, \delta, q_0, F),
+    \end{equation}
+    где $Q$ --- конечное множество состояний,\\
+    $\Sigma$ --- конечное множество допустимых входных символов (входной алфавит),\\
+    $\varepsilon$ --- пустая цепочка символов,\\
+    $\delta \colon \: Q \times (\Sigma \cup \{\varepsilon\}) \rightarrow P(Q)$ --- функция переходов, отображающая пару
+        <<состояние -- символ>> в некое подмножество $Q$,\\
+    $q_0 \in Q$ --- начальное состояние,\\
+    $F \subseteq Q$ --- множество заключительных (допускающих) состояний.
+\end{block}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Формализм конечного автомата}
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}
+        \node[state, initial] (1) {$1$};
+        \node[state, below left of=1, xshift=-1cm, yshift=-1cm] (2) {$2$};
+        \node[state, accepting, right of=2, xshift=1cm] (3) {$3$};
+        \draw [->] (1) edge[above] node{$b$} (2)
+                   (1) edge[below, bend right, left=0.3] node{$\varepsilon$} (3)
+                   (2) edge[loop left] node{$a$} (2)
+                   (2) edge[below] node{$a, b$} (3)
+                   (3) edge[above, bend right, right=0.3] node{$a$} (1);
+    \end{tikzpicture}
+
+    \vspace{1cm}
+
+    \begin{tikzpicture}
+        \tikzstyle{every path}=[very thick]
+        \edef\sizetape{0.7cm}
+        \tikzstyle{tmtape}=[draw,minimum size=\sizetape]
+        \tikzstyle{tmhead}=[arrow box,draw,minimum size=.5cm,arrow box arrows={east:.25cm, west:0.25cm}]
+
+        %% Draw TM tape
+        \begin{scope}[start chain=1 going right,node distance=-0.15mm]
+            \node [on chain=1,tmtape,draw=none] {$\ldots$};
+            \node [on chain=1,tmtape] {};
+            \node [on chain=1,tmtape] (input) {b};
+            \node [on chain=1,tmtape] {b};
+            \node [on chain=1,tmtape] {a};
+            \node [on chain=1,tmtape] {a};
+            \node [on chain=1,tmtape] {a};
+            \node [on chain=1,tmtape] {a};
+            \node [on chain=1,tmtape] {};
+            \node [on chain=1,tmtape,draw=none] {$\ldots$};
+        \end{scope}
+
+        %% Draw TM head below (input) tape cell
+        \node [tmhead,yshift=-.3cm] at (input.south) (head) {$q$};
+    \end{tikzpicture}
+    \caption{Диаграмма состояний недетерминированного конечного автомата}
+\end{figure}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Модель потока}
+\frametitle{Формализм конечного автомата: модель потока}
+\begin{itemize}
+%\setlength\itemsep{2em}
+    \item $Q$ --- состояние памяти и регистров процессора,
+    \item $q_0$ --- точка начала исполнения потока \textit{(entry point)},
+    \item Переход между состояниями $(q_i, q_j)$ --- событие \textit{(event)},
+        причём каждому событию ставится в соответствие точка на временной шкале,
+    \item Все события по определению одномоментны (квантование времени).
+    \item Никакие два события не являются одновременными.
+    \item События $a$ и $b$ называются \textbf{упорядоченными,} если $a$ предшествует $b$: $a \to b$.
+    \item Произвольные два события $a$ и $b$ могут быть неупорядочены: $a \not\to b$ и $b \not\to a$.
+    \item Отношение порядка транзитивно: если $a \to b$ и $b \to c$, то $a \to c$.
+    \item \textbf{Интервал} $I(a,b)$ --- это пара событий $(a, b)$ такая, что $a \to b$.\\
+    \item Интервал $I(a,b)$ \textbf{предшествует} интервалу $I(b, c)$ ($I(a,b) \to I(b,c)$), если $b \to c$.
+    \item Интервалы, не связанные отношением <<$\to$>>, называются \textbf{соисполняемыми} \textit{(concurrent)}.
+\end{itemize}
+
+Пример простого доказательства корректности для lock-free hash table\\
+\texttt{https://docs.huihoo.com/javaone/2007/java-se/TS-2862.pdf}
+
+Ключевые слова для желающих углубиться: discrete event simulation, communicating finite-state machines
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Формализм конечного автомата: модель потока}
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.8\textwidth}
+\small
+\begin{verbatim}
+#include <thread>
+#include <atomic>
+#include <stdio.h>
+#include <vector>
+
+std::atomic<int> a, b; // state: variables
+
+void f1() {
+    a = 0xF; // event: variable assignment
+    while (a != b); // event: wait for condition
+    printf("OK\n");
+}
+
+void f2(int c) {
+    b |= c; // event: variable assignment
+}
+
+int main() {
+    b.store(0);
+    std::vector<std::thread> v(5);
+    v[4] = std::thread(f1);
+    for (int i = 0; i < 4; i++)
+        v[i] = std::thread(f2, 1 << i);
+    for (auto &t: v)
+        t.join();
+    printf("That's all\n");
+}
+\end{verbatim}
+\end{minipage}
+\end{figure}
+\end{frame}
+
+\begin{frame}
+\frametitle{Взаимоисключение и критические секции}
+\begin{block}{Определение}
+   Назовём интервал $CS_i$ \textbf{критической секцией}, если для детерминированности совместного исполнения потоков необходимо,
+   чтобы для любых потоков $A$, $B$ их критические секции были упорядочены: $CS_A \to CS_B$ или $CS_B \to CS_A$.
+   Выполнение этого условия для системы потоков называется свойством взаимоисключения \textit{(mutual exclusion)}.
+\end{block}
+\begin{block}{Критерий Бернстайна}
+	Пусть $R(P_i)$ множество переменных, значение которых поток $P_i$ использует в операциях чтения, $W(P_i)$ ---
+	множество переменных, использующихся в операциях записи. Тогда совокупное исполнение потоков $P_1$ и $P_2$ детерминировано, если
+	\begin{equation}
+	\left\{
+	\begin{aligned}
+		W(P_1) \cap W(P_2) = \varnothing \\
+		R(P1)  \cap W(P_2) = \varnothing \\
+		W(P_1) \cap R(P_2) = \varnothing \\
+	\end{aligned}
+	\right.
+   \end{equation}
+\end{block}
+\end{frame}
+
+\begin{frame}
+\frametitle{Свойства алгоритмов}
+\begin{enumerate}
+\item \textbf{Отсутствие зависаний} \textit{(starvation freedom / lockout freedom)}\\
+    Каждый поток рано или поздно попадает в критическую секцию, т.~е. каждое обращение к методам рано или поздно завершается.
+\item \textbf{Неблокируемость} \textit{(non-blocking)}\\
+    Блокировка (задержка) одного потока не задерживает другие потоки.
+\item \textbf{Свобода от взаимной блокировки} \textit{(freedom from deadlock)}\\
+    Хотя бы один из конкурирующих потоков должен рано или поздно попасть в нужную ему критическую секцию. Если некоторый поток не может войти в критическую секцию, то другие потоки должны завершить бесконечное количество критических секций.
+\item \textbf{Честность} \textit{(fairness)}\\
+    Если $D_A$ и $D_B$ --- попытки входа (взятия блокировки) в критические секции $CS_A$ и $CS_B$ для потоков $A$ и $B$ и $D_A \to D_B$, то
+    $CS_A \to CS_B$.
+\item \textbf{Свобода от ожидания} \textit{(wait-free)}\\
+    Выполнение метода заканчивается за конечное количество шагов без каких-либо процедур ожидания.
+\item \textbf{Свобода от блокировок} \textit{(lock-free)}\\
+    Неограниченно частый вызов метода завершится за конечное число шагов.
+\end{enumerate}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Проблемы блокировок}
+\begin{itemize}
+\setlength\itemsep{2em}
+\item Крупнозернистая синхронизация плохо масштабируется
+\item Мелкозернистая тяжела в написании
+\item Тупики
+\item Инверсия приоритета
+\item Конвоирование
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{wait-free}
+\begin{itemize}
+\item Гарантия безусловного прогресса для каждого потока в отдельности
+\item Гарантия безусловного прогресса системы в целом
+\item Обычно используются блокирующие память операции
+\item Реализации часто требуют $O(N)$ памяти, где $N$ — число потоков
+\end{itemize}
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.8\textwidth}
+\begin{verbatim}
+someClass::someClass() {
+    ...
+    __sync_fetch_and_add(referenceCount, 1);
+}
+
+someClass::~someClass() {
+    ...
+    if (__sync_sub_and_fetch(referenceCount, 1) == 0) {
+        // delete unused shared object
+    }
+}
+\end{verbatim}
+\end{minipage}
+\end{figure}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{lock-free}
+\begin{itemize}
+\item Уже нет гарантии безусловного прогресса для каждого потока в отдельности.
+\item Гарантия безусловного прогресса системы в целом, то есть хотя бы один поток продвигается вперёд независимо от внешних факторов
+\item Остальные потоки могут в это время активно ожидать, то есть, непродуктивно использовать процессорное время.
+\item Обычно используются CAS-примитивы.
+\item Может наблюдаться инверсия приоритетов и конвоирование.
+\item Контейнеры, как правило, быстрее wait-free.
+\end{itemize}
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.8\textwidth}
+\begin{verbatim}
+void push(struct node *n) {
+      do {
+            struct node *t = top;
+            n->next = t;
+      while (!CAS(&top, t, n));
+}
+\end{verbatim}
+\end{minipage}
+\end{figure}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{obstruction-free}
+\begin{itemize}
+    \item Условный прогресс: поток продвигается вперёд только тогда, когда нет конкуренции со стороны других потоков.
+    \item Система в целом при большой взаимной конкуренции потоков не продвигается вперёд.
+    \item Возможна живая блокировка (live-lock).
+    \item Алгоритмы могут быть быстрее других.
+    \item Некоторые алгоритмы можно реализовать лишь так (double-linked list).
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{pure-free}
+\begin{itemize}
+    \item Свободный метод для изолированного потока обеспечивает завершение за конечное число шагов.
+    \item Не гарантирует совместный прогресс.
+    \item При наличии других потоков возможна взаимная блокировка.
+    \item Все полны оптимизма, работают на себя и надеются на лучшее.
+\end{itemize}
+\end{frame}
+
+\end{document}

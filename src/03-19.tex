@@ -110,6 +110,114 @@ public:
 \end{frame}
 
 \begin{frame}[fragile]
+\frametitle{MCS lock}
+\begin{figure}[H]
+\begin{minipage}{0.8\textwidth}
+\small
+\begin{minted}{C++}
+struct mcs_lock {
+    std::atomic<struct mcs_node *> tail;
+
+    struct mcs_node {
+        struct mcs_node *next;
+        bool locked;
+    };
+
+    thread_local static struct mcs_node qnode;
+};
+
+static inline mcs_lock::lock() {
+    const auto predecessor = tail.exchange (&this.qnode);
+
+    if (predecessor != nullptr) {
+        qnode.locked = true;
+        predecessor->next = &this.qnode;
+        while (qnode.locked);
+    }
+}
+\end{minted}
+\end{minipage}
+\end{figure}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{MCS lock}
+\begin{figure}[H]
+\begin{minipage}{0.8\textwidth}
+\small
+\begin{minted}{C++}
+static inline mcs_lock::unlock() {
+    const auto successor = qnode.next;
+
+    if (successor == nullptr) {
+        if (tail.compare_exchange_strong(&this.qnode, nullptr)) {
+            // No CPUs were waiting for the lock, set it to nullptr
+            return;
+        }
+    }
+
+    // We could not set our successor to nullptr, therefore qnode.next is out of sync with tail,
+    // therefore another CPU is in the middle of `lock()`, prior to linking themselves in the queue.
+    // We wait for that to happen:
+    while (successor == nullptr) ;
+
+    // The other CPU has linked themselves, all we need to do is wake it up as the next-in-line
+    successor->locked = false;
+}
+\end{minted}
+\end{minipage}
+\end{figure}
+\end{frame}
+
+\begin{frame}
+\frametitle{MCS lock}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.4\textwidth]{fig/mcs1.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}
+\frametitle{MCS lock}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.4\textwidth]{fig/mcs2.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}
+\frametitle{MCS lock}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.4\textwidth]{fig/mcs3.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}
+\frametitle{MCS lock}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.4\textwidth]{fig/mcs4.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}
+\frametitle{MCS lock}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.4\textwidth]{fig/mcs5.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}
+\frametitle{MCS lock}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.4\textwidth]{fig/mcs6.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}[fragile]
 \frametitle{CLH lock}
 \begin{figure}[H]
 \begin{minipage}{0.8\textwidth}
@@ -190,6 +298,8 @@ void clh_mutex_unlock(clh_mutex_t * self) {
 \frametitle{Задачи}
 \begin{enumerate}
 \item Можно ли обойтись без \texttt{pthreads} для организации thread-local переменных? Предложите свой вариант array-based lock.
+\item Попробуйте написать свой MCS / CLH lock.
+\item Как можно использовать то, что в замках, основанных на списке, треды, находящиеся далеко от <<выхода>> могут пореже проверять условие блокировки? 
 \end{enumerate}
 
 \end{frame}
