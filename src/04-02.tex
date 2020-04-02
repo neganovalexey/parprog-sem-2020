@@ -1,0 +1,369 @@
+\documentclass[aspectratio=169, pdf, 8pt, unicode]{beamer}
+\usepackage[american,russian]{babel}
+\usepackage[default]{sourcesanspro}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{pgfplotstable}
+\usepackage{caption}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{setspace}
+\usepackage{fancyvrb}
+\usepackage[outputdir=aux]{minted}
+
+\DeclareCaptionLabelFormat{gostfigure}{Рисунок #2}
+\captionsetup[table]{labelsep=endash,justification=justified,singlelinecheck=false,font=normalsize,skip=0pt} 
+\captionsetup[figure]{labelformat=gostfigure,labelsep=endash,justification=centering,singlelinecheck=false,font=normalsize} 
+\pgfplotsset{compat=1.9}
+
+\mode<presentation> {
+\usetheme{Madrid}
+}
+
+\setbeamerfont{institute}{size=\normalsize}
+\setbeamertemplate{itemize/enumerate body begin}{\large}
+\setbeamertemplate{itemize/enumerate subbody begin}{\tiny}
+
+\title[Теория и практика многопоточного программирования]{Теория и практика многопоточного программирования\\ \vspace{0.5cm}Семинар 8}
+
+\author{Неганов Алексей}
+
+\institute[МФТИ]{
+    Московский физико-технический институт (национальный исследовательский университет)\\
+    Кафедра теоретической и прикладной информатики\\
+}
+
+\date{Москва 2020}
+
+\setbeamertemplate{caption}[numbered]
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Задача производителя-потребителя}
+\begin{figure}[H]
+\begin{minipage}{0.4\textwidth}
+\small
+\begin{minted}{Go}
+package main
+import "fmt"
+
+var done = make(chan bool)
+var msgs = make(chan int)
+
+func produce () {
+    for i := 0; i < 10; i++ {
+        msgs <- i
+    }
+    done <- true
+}
+
+func consume () {
+    for {
+      msg := <-msgs
+      fmt.Println(msg)
+   }
+}
+
+func main () {
+   go produce()
+   go consume()
+   <- done
+}
+\end{minted}
+\end{minipage}
+\end{figure}
+\end{frame}
+
+
+\begin{frame}[fragile]
+\frametitle{Задача производителя-потребителя}
+\begin{figure}[H]
+\begin{minipage}{0.4\textwidth}
+%\small
+\begin{minted}{C}
+int itemCount = 0;
+
+void producer(void) {
+    while (1) {
+        item = produceItem();
+        if (itemCount == BUFFER_SIZE)
+            sleep();
+
+        putItemIntoBuffer(item);
+        itemCount = itemCount + 1;
+
+        if (itemCount == 1)
+            wakeup(consumer);
+    }
+}
+\end{minted}
+\end{minipage}
+\begin{minipage}{0.4\textwidth}
+%\small
+\begin{minted}{C}
+void consumer(void) {
+    while (1) {
+        if (itemCount == 0)
+            sleep();
+
+        item = removeItemFromBuffer();
+        itemCount = itemCount - 1;
+
+        if (itemCount == BUFFER_SIZE - 1)
+            wakeup(producer);
+
+        consumeItem(item);
+    }
+}
+\end{minted}
+\end{minipage}
+\end{figure}
+Почему такой код не является корректным?
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Семафоры}
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.4\textwidth}
+\begin{verbatim}
+# ALGOL up
+# POSIX sem_post
+function V(semaphore S, integer I):
+    [S ← S + I]
+
+# ALGOL down
+# POSIX sem_wait
+function P(semaphore S, integer I):
+    repeat:
+        [if S ≥ I:
+        S ← S − I
+        break]
+\end{verbatim}
+\end{minipage}
+\end{figure}
+Операции $P$ и $V$ имеет право делать \textbf{любой} поток, в отличие от \texttt{mutex}.
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Задача производителя-потребителя: семафоры}
+\begin{figure}[H]
+\begin{minipage}{0.4\textwidth}
+%\small
+\begin{minted}{C}
+sem_t fill, empty;
+sem_init(&fill, 0, 0);
+sem_init(&empty, 0, BUFFER_SIZE);
+
+void producer(void) {
+    while (1) {
+        item = produceItem();
+        sem_wait(&empty);
+        putItemIntoBuffer(item);
+        sem_post(&fill);
+    }
+}
+\end{minted}
+\end{minipage}
+\begin{minipage}{0.4\textwidth}
+%\small
+\begin{minted}{C}
+procedure consumer() {
+    while (1) {
+        sem_wait(&fill);
+        item = removeItemFromBuffer();
+        sem_post(&empty);
+        consumeItem(item);
+    }
+}
+\end{minted}
+\end{minipage}
+\end{figure}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Задача производителя-потребителя: семафоры}
+\begin{figure}[H]
+\begin{minipage}{0.4\textwidth}
+%\small
+\begin{minted}{C}
+pthread_mutex_t lock;
+sem_t fill, empty;
+sem_init(&fill, 0, 0);
+sem_init(&empty, 0, BUFFER_SIZE);
+
+void producer(void) {
+    while (1) {
+        item = produceItem();
+        sem_wait(&empty);
+        pthread_mutex_lock(&lock);
+        putItemIntoBuffer(item);
+        pthread_mutex_unlock(&lock);
+        sem_post(&fill);
+    }
+}
+\end{minted}
+\end{minipage}
+\begin{minipage}{0.4\textwidth}
+%\small
+\begin{minted}{C}
+procedure consumer() {
+    while (1) {
+        sem_wait(&fill);
+        pthread_mutex_lock(&lock);
+        item = removeItemFromBuffer();
+        pthread_mutex_unlock(&lock);
+        sem_post(&empty);
+        consumeItem(item);
+    }
+}
+\end{minted}
+\end{minipage}
+\end{figure}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Задача читателя-писателя: приоритет читателя}
+\begin{figure}[H]
+\begin{minipage}{0.4\textwidth}
+\begin{minted}{C}
+semaphore resource=1;
+semaphore rentry=1;
+
+int rcount=0;
+
+writer() {
+    P(resource);
+    // write
+    V(resource)
+}
+\end{minted}
+\end{minipage}
+\begin{minipage}{0.4\textwidth}
+\begin{minted}{C}
+reader() {
+    P(rentry);
+    readcount++;
+    if (++rcount == 1)
+        P(resource);
+    v(rentry)
+
+    // read
+
+    P(rentry)
+    if (--rcount == 0)
+        V(resource);
+    V(rentry);
+}
+\end{minted}
+\end{minipage}
+\end{figure}
+См. \texttt{pthread\_rwlock\_t}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Задача читателя-писателя: приоритет писателя}
+\begin{figure}[H]
+\begin{minipage}{0.4\textwidth}
+\begin{minted}{C}
+int rcount = 0, wcount = 0;
+semaphore rentry = 1, wentry = 1;
+semaphore readTry = 1, resource = 1;
+
+writer() {
+    P(wentry);
+    if (++wcount == 1)
+        P(readTry);
+    V(wentry);
+
+    P(resource);
+    // write
+    V(resource);
+
+    P(wentry);
+    if (--writecount == 0)
+        V(readTry);
+    V(wentry);
+}
+\end{minted}
+\end{minipage}
+\begin{minipage}{0.4\textwidth}
+\begin{minted}{C}
+reader() {
+    P(readTry);
+    P(rentry);
+    if (++readcount == 1)
+        P(resource);
+    V(rentry);
+    V(readTry);
+
+    // read
+
+    P(rentry);
+    if (--readcount == 0)
+        V(resource);
+    V(rentry)
+}
+\end{minted}
+\end{minipage}
+\end{figure}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Задача читателя-писателя: честное решение}
+\begin{figure}[H]
+\begin{minipage}{0.4\textwidth}
+\begin{minted}{C}
+int rcount = 0;
+semaphore rentry = 1, resource = 1;
+semaphore queue = 1;
+
+writer() {
+    P(queue);
+    P(resource);
+    V(queue);
+
+    // write
+
+    V(resource);
+}
+\end{minted}
+\end{minipage}
+\begin{minipage}{0.4\textwidth}
+\begin{minted}{C}
+reader() {
+    P(queue);
+    P(rentry);
+    if (++readcount == 1)
+        P(resource);
+    V(rentry);
+    V(queue);
+
+    // read
+
+    P(rentry);
+    if (--readcount == 0)
+        V(resource);
+    V(rentry);
+}
+\end{minted}
+\end{minipage}
+\end{figure}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Задачи}
+\begin{enumerate}
+\item Реализовать RW lock с помощью семафоров POSIX
+\item Реализовать RW lock с помощью атомарных примитивов
+\item Реализовать передачу содержимого файла из одного процесса в другой через разделяемый буфер, используя семафоры. Требование: смерть любого процесса 
+должна корректно обработаться.
+\end{enumerate}
+\end{frame}
+
+\end{document}
