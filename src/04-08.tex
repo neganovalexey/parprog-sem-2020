@@ -1,0 +1,153 @@
+\documentclass[aspectratio=169, pdf, 8pt, unicode]{beamer}
+\usepackage[american,russian]{babel}
+\usepackage[default]{sourcesanspro}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{pgfplotstable}
+\usepackage{caption}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{setspace}
+\usepackage{fancyvrb}
+\usepackage[outputdir=aux]{minted}
+
+\DeclareCaptionLabelFormat{gostfigure}{Рисунок #2}
+\captionsetup[table]{labelsep=endash,justification=justified,singlelinecheck=false,font=normalsize,skip=0pt} 
+\captionsetup[figure]{labelformat=gostfigure,labelsep=endash,justification=centering,singlelinecheck=false,font=normalsize} 
+\pgfplotsset{compat=1.9}
+
+\mode<presentation> {
+\usetheme{Madrid}
+}
+
+\setbeamerfont{institute}{size=\normalsize}
+\setbeamertemplate{itemize/enumerate body begin}{\large}
+\setbeamertemplate{itemize/enumerate subbody begin}{\tiny}
+
+\title[Теория и практика многопоточного программирования]{Теория и практика многопоточного программирования\\ \vspace{0.5cm}Семинар 9}
+
+\author{Неганов Алексей}
+
+\institute[МФТИ]{
+    Московский физико-технический институт (национальный исследовательский университет)\\
+    Кафедра теоретической и прикладной информатики\\
+}
+
+\date{Москва 2020}
+
+\setbeamertemplate{caption}[numbered]
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Monitor}
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.8\textwidth}
+\begin{minted}{Java}
+acquire(m); // Acquire this monitor's lock.
+while (!p) { // While the condition/predicate/assertion that we are waiting for is not true...
+	wait(m, cv); // Wait on this monitor's lock and condition variable.
+}
+// ... Critical section of code goes here ...
+signal(cv2); -- OR -- notifyAll(cv2); // cv2 might be the same as cv or different.
+release(m); // Release this monitor's lock.
+\end{minted}
+\end{minipage}
+\end{figure}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Seqlock}
+\begin{figure}[H]
+\begin{minipage}{0.4\textwidth}
+\begin{minted}{C}
+void thread_read(void) {
+    do {
+        while((c=lock->cnt)&1);
+        /* read */
+    } while(lock->cnt!=c);
+}
+\end{minted}
+\end{minipage}
+\begin{minipage}{0.4\textwidth}
+\begin{minted}{C}
+void thread_write(void) {
+    do {
+        while((c=lock->cnt)&1);
+    } while(!CAS(&lock->cnt,c,c+1);
+    /* write */
+    atomic_fetch_add(&lock->cnt, 1);
+}
+\end{minted}
+\end{minipage}
+\end{figure}
+\begin{itemize}
+\item нет указателей
+\item частые чтения
+\item запись редка, но обязана быть быстрой
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Krefs}
+\begin{figure}[H]
+\begin{minipage}{0.4\textwidth}
+\begin{minted}{C}
+struct foo {
+    struct kref kref;
+}
+
+struct foo *foo;
+foo = kmalloc(sizeof(*foo), GFP_KERNEL);
+kref_init(&foo->kref, foo_release);
+kref_get(&foo->kref);
+kref_put(&foo->kref);
+
+struct kref *kref_get(struct kref *kref) {
+    atomic_inc(&kref->refcount);
+    return kref;
+}
+
+void foo_release(struct kref *kref) {
+    struct foo *foo;
+    foo = container_of(foo, struct foo, kref);
+    kfree(foo);
+}
+\end{minted}
+\end{minipage}
+\end{figure}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Fastflow}
+\begin{figure}[H]
+\begin{minipage}{0.4\textwidth}
+\begin{minted}{C++}
+Bool push(Element& item) {
+    int nextTail = increment(tail);
+    if (nextTail != head) {
+        array[tail] = item;
+        tail = nextTail;
+        return true;
+    }
+    return false;
+}
+
+Bool pop(Element& item) {
+    if (tail == head)
+        return false;
+    item = array[head];
+    head = increment(head);
+    return true;
+}
+\end{minted}
+\end{minipage}
+\end{figure}
+\end{frame}
+
+\end{document}
