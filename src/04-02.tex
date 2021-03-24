@@ -127,6 +127,57 @@ void consumer(void) {
 \end{frame}
 
 \begin{frame}[fragile]
+\frametitle{Задача производителя-потребителя}
+\begin{figure}[H]
+\begin{minipage}{0.4\textwidth}
+%\small
+\begin{minted}{C}
+static pthread_mutex_t mtx;
+static pthread_cond_t cv;
+...
+static std::deque<int> queue;
+static constexpr sizeLimit = ...;
+...
+
+
+void put(int x)
+{
+    pthread_mutex_lock(&mtx);
+
+    while (queue.size() >= sizeLimit)
+        pthread_cond_wait(&cv, &mtx);
+    queue.push_back(x);
+
+    pthread_cond_signal(&cv);
+    pthread_mutex_unlock(&mtx);
+}
+
+\end{minted}
+\end{minipage}
+\begin{minipage}{0.4\textwidth}
+%\small
+\begin{minted}{C}
+int get()
+{
+    int x;
+
+    pthread_mutex_lock(&mtx);
+
+    while (queue.empty())
+        pthread_cond_wait(&cv, &mtx);
+    x = queue.pop_front();
+
+    pthread_cond_signal(&cv);
+    pthread_mutex_unlock(&mtx);
+
+    return x;
+}
+\end{minted}
+\end{minipage}
+\end{figure}
+Почему такой код не является корректным?
+\end{frame}
+\begin{frame}[fragile]
 \frametitle{Семафоры}
 \begin{figure}[H]
 \centering
@@ -363,6 +414,7 @@ reader() {
 \item Реализовать RW lock с помощью атомарных примитивов
 \item Реализовать передачу содержимого файла из одного процесса в другой через разделяемый буфер, используя семафоры. Требование: смерть любого процесса 
 должна корректно обработаться.
+\item Найти ошибку в некорректном решении задачи производителя-потребителя, используя TLA+.
 \end{enumerate}
 \end{frame}
 
